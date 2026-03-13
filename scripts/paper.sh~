@@ -1,0 +1,16 @@
+#!/bin/bash
+
+echo "benchmark deadline" > paper.txt
+(time ./primlc priml-examples/dfc_examples/deadline4.prm a.out) >> paper.txt 2>> paper.txt
+
+echo "benchmark exhaust-sync" >> paper.txt
+(time ./primlc priml-examples/dfc_examples/regression/exhaust_sync.prm a.out) >> paper.txt 2>> paper.txt
+
+echo "benchmark nqueens-serv" >> paper.txt
+(time ./primlc priml-examples/dfc_examples/nqueensserv.prm a.out) >> paper.txt 2>> paper.txt
+
+echo "benchmark web" >> paper.txt
+cd priml-examples/web-extended; (time make) >> ../../paper.txt 2>> ../../paper.txt
+cd ../../
+
+./convert.sh paper.txt paper.csv

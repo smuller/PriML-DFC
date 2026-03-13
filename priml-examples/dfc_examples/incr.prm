@@ -1,0 +1,19 @@
+priority p1
+priority p2
+priority p3
+priority p4
+order p1 < p2
+order p2 < p3
+order p3 < p4
+
+fun incr p =
+  if p = bot then p1
+  else if p = p1 then p2
+  else if p = p2 then p3
+  else p4
+
+main {
+  t1 <- spawn[incr p1] { ret 1 };
+  t2 <- spawn[p1] { sync t1; ret 0 };
+  ret 0
+}

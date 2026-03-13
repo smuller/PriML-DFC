@@ -1,0 +1,57 @@
+priority a
+priority b
+priority c
+priority d
+priority e
+priority f
+
+(* 
+         c < b 
+    f <         < a
+         e < d 
+*)
+(* 
+    f < c < b < a
+    f < e < d < a 
+*)
+order f < c
+order c < b
+order b < a
+order f < e
+order e < d
+order d < a
+
+
+
+(* PReSeNT *)
+
+
+(* Priorities *)
+(* 
+         c < b 
+    f <         < a
+         e < d 
+*)
+
+fun choose_thread 
+    (n : int) td1 td2 (*
+    (td1 : 'a thread[b, c]) 
+    (td2 : 'a thread[d, e]) *) 
+=
+    if n > 8 then td1 else td2
+    (* : 'a thread[b, c, d, e] *)
+
+main {
+    td1 <- spawn[b] { ret 5 };
+    td2 <- spawn[e] { ret 9 };
+    td4 <- 
+        let val td3 = choose_thread 3 td1 td2   (* either td1 or td2 *)
+        in 
+            spawn[f] {   (* must be lower than b, c, d, e *)
+                x <- sync td3;
+                ret x
+            }
+        end;
+    x <- sync td4;
+    ret x
+}

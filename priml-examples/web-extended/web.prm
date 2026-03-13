@@ -1,0 +1,431 @@
+extern type socket_domain
+extern type socket_type
+extern type socket_bool_option
+extern type inet_addr
+extern type file_descr
+extern type Unix.sockaddr
+extern type msg_flag
+extern type bytes
+extern type tm
+extern type shutdown_command
+extern type access_permission
+extern type in_channel
+extern val Unix.socket : (socket_domain -> socket_type -> int -> file_descr)
+extern val Unix.PF_INET : socket_domain
+extern val Unix.SOCK_STREAM : socket_type
+extern val Unix.setsockopt : file_descr -> socket_bool_option -> bool -> unit
+extern val Unix.SO_REUSEADDR : socket_bool_option
+extern val Unix.ADDR_INET : inet_addr * int -> Unix.sockaddr
+extern val Unix.inet_addr_loopback : inet_addr
+extern val Unix.accept : file_descr -> file_descr * Unix.sockaddr
+extern val Unix.bind : file_descr -> Unix.sockaddr -> unit
+extern val Unix.listen : file_descr -> int -> unit
+extern val Unix.send_substring : file_descr -> string -> int -> int -> msg_flag list -> int
+extern val Unix.recv : file_descr -> (bytes -> (int -> (int -> ((msg_flag list) -> int))))
+extern val String.split_on_char : char -> string -> string list
+extern val Bytes.create : int -> bytes
+extern val Bytes.sub : bytes -> int -> int -> bytes
+extern val Bytes.to_string : bytes -> string
+extern val Unix.localtime : int -> tm
+extern val Unix.shutdown : file_descr -> shutdown_command -> unit
+extern val Unix.SHUTDOWN_ALL : shutdown_command
+extern val Unix.R_OK : access_permission
+extern val Unix.access : string -> (access_permission list) -> unit
+
+extern val open_in : string -> in_channel
+extern val close_in : in_channel -> unit
+extern val input_line : in_channel -> string
+extern val at_exit : (unit -> unit) -> unit
+
+extern val 'a List.iter : ('a -> unit) -> 'a list -> unit
+extern val 'a List.length : 'a list -> int
+extern val 'a List.nth : 'a list -> int -> 'a
+extern val 'a List.rev : 'a list -> 'a list
+extern val 'a List.filter : ('a -> bool) -> 'a list -> 'a list
+extern val 'a List.flatten : 'a list list -> 'a list
+extern val 'a List.append : 'a list -> 'a list -> 'a list
+extern val ('a, 'b) List.map : ('a -> 'b) -> 'a list -> 'b list
+extern val 'a List.sort_uniq : ('a -> 'a -> int) -> 'a list -> 'a list
+							   
+extern val ^ : string * string -> string
+extern val string_of_int : int -> string
+extern val String.length : string -> int
+
+extern type float
+extern val Unix.gmtime : float -> tm
+extern val Unix.time : unit -> float
+extern val Time.tm_sec : tm -> int
+extern val Time.tm_min : tm -> int
+extern val Time.tm_hour : tm -> int
+extern val Time.tm_mday : tm -> int
+extern val Time.tm_wday : tm -> int
+extern val Time.tm_mon : tm -> int
+extern val Time.tm_year : tm -> int
+extern val Time.sleep : int -> unit
+extern val Time.tsminus : float -> float -> float
+extern val Time.tsless : float -> int -> bool
+						
+extern val Printf.printf : string -> unit
+extern val Time.print : string -> unit
+
+extern type Lib.host
+extern val Lib.host_compare : Lib.host -> Lib.host -> int
+extern val Lib.string_of_host : Lib.host -> string
+extern val Lib.host_of_sockaddr : Unix.sockaddr -> Lib.host
+						     
+extern type int_atomic
+extern val Atomic.make : int -> int_atomic
+extern val Atomic.incr : int_atomic -> unit
+extern val Atomic.decr : int_atomic -> unit
+extern val Atomic.get : int_atomic -> int
+
+extern type Lib.ts_list_hashtbl
+extern val Lib.TSHashtbl.create : int -> Lib.ts_list_hashtbl
+extern val Lib.TSHashtbl.add : Lib.ts_list_hashtbl -> Lib.host -> float -> unit
+extern val Lib.TSHashtbl.find_all : Lib.ts_list_hashtbl -> Lib.host -> float list
+
+extern type Lib.unit_hashtbl
+extern val Lib.UHashtbl.create : int -> Lib.unit_hashtbl
+extern val Lib.UHashtbl.add : Lib.unit_hashtbl -> Lib.host -> unit -> unit
+extern val Lib.UHashtbl.mem : Lib.unit_hashtbl -> Lib.host -> bool
+
+
+exception Invalid_argument of string
+				   
+priority low_class_p
+priority accept_p
+priority high_class_p
+priority serve_p
+
+order low_class_p < accept_p
+order accept_p < high_class_p
+order high_class_p < serve_p
+
+val _ = Printf.printf "Hi!\n%!"
+
+type request =
+     {page : string,
+      host : Lib.host,
+      ts   : float}
+
+val socks = ref nil
+val conns = Atomic.make 0
+val reqs : request list ref = ref nil
+val conns_hashtbl : Lib.ts_list_hashtbl = Lib.TSHashtbl.create 100
+val bad_hashtbl : Lib.unit_hashtbl = Lib.UHashtbl.create 100
+
+(* Parameters *)
+val conns_cutoff = 10 (* Number of connections for switching priority *)
+val req_threshold = 5 (* A host is bad if it has more than this many reqs *)
+val time_window = 5 (* over this many seconds *)
+val hosts_par_threshold = 10 (* Hosts to process sequentially for tracking *)
+
+val request_mut = newmutex[serve_p]
+val bad_mut = newmutex[high_class_p]
+
+
+fun close sock = (Unix.shutdown sock) Unix.SHUTDOWN_ALL
+
+fun addtosocks s =
+    socks := (fn () => close s)::(!socks)
+
+fun open_conn _ =
+    let val sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0
+    in
+	Unix.setsockopt sock Unix.SO_REUSEADDR true;
+	Unix.bind sock (Unix.ADDR_INET (Unix.inet_addr_loopback, 8000));
+	Unix.listen sock 32;
+	addtosocks sock;
+	sock
+    end
+
+fun accept sock =
+    let val (s, _) = Unix.accept sock in s end
+
+
+
+val _ = at_exit (fn () => List.iter (fn f => f ()) (!socks))
+
+fun parse_request s =
+    let val tokens = String.split_on_char ?  s
+	val url = List.nth tokens 1
+	val urltokens = String.split_on_char ?/ url
+    in
+	SOME (List.nth urltokens (List.length urltokens - 1))
+    end
+
+	  
+fun format_date tm =
+    (case (Time.tm_wday tm) of
+	 0 => "Sun"
+       | 1 => "Mon"
+       | 2 => "Tue"
+       | 3 => "Wed"
+       | 4 => "Thur"
+       | 5 => "Fri"
+       | 6 => "Sat"
+       | _ => raise (Invalid_argument "format_date")
+    )
+    ^ ", "
+    ^ (string_of_int (Time.tm_mday tm))
+    ^ " "
+    ^
+    (case Time.tm_mon tm of
+	 0 => "January"
+       | 1 => "February"
+       | 2 => "March"
+       | 3 => "April"
+       | 4 => "May"
+       | 5 => "June"
+       | 6 => "July"
+       | 7 => "August"
+       | 8 => "September"
+       | 9 => "October"
+       | 10 => "November"
+       | 11 => "December"
+       | _ => raise (Invalid_argument "format_date")
+    )
+    ^ " " ^ (string_of_int ((Time.tm_year tm) + 1900))
+    ^ " " ^ (string_of_int (Time.tm_hour tm))
+    ^ ":" ^ (string_of_int (Time.tm_min tm))
+    ^ ":" ^ (string_of_int (Time.tm_sec tm))
+
+fun build_success s =
+    "HTTP/1.0 200 OK"
+    :: ("Date: " ^
+	(format_date (Unix.gmtime (Unix.time ()))))
+    :: "Content-Type: text/html"
+    :: ("Content-Length: " ^ (string_of_int (String.length s)))
+    :: "Connection: Keep-Alive"
+    :: ""
+    :: s
+    :: nil
+		
+fun build_inv_req () =
+    "HTTP/1.0 400 Bad Request" :: nil
+
+fun build_404 () =
+    "HTTP/1.0 404 Not Found"
+    :: ("Date: " ^
+	(format_date (Unix.gmtime (Unix.time ()))))
+    :: "Content-Type: text/html"
+    :: "Content-Length: 0"
+    :: ""
+    :: nil
+
+val dummy_page =
+    "<html><head><title>Dummy page</title></head><body>Hi!</body></html>"
+
+
+fun readfile f =
+  let val chan = open_in f
+      fun readloop s =
+	  (readloop s ^ (input_line chan))
+	  handle End_of_file => s
+      val s = readloop ""
+  in
+      close_in chan;
+      SOME s
+  end
+  handle _ => NONE
+
+
+fun sendLine sock s =
+    let fun sendLineRec (sock, s, n, len) =
+	    if n = len then ()
+	    else
+		let val n' = Unix.send_substring sock s n len nil
+			     (*
+		    val _ = Time.print ((string_of_int n) ^ "\n")
+		    val _ = Time.print ((string_of_int n') ^ "\n")
+*)
+		in
+		    sendLineRec (sock, s, n', len)
+		end
+	val s = s ^ "\r\n"
+		(*
+	val _ = Time.print s
+	val _ = Printf.printf "%!"
+*)
+    in	
+	sendLineRec (sock, s, 0, String.length s)
+    end
+
+fun recv sock =
+  let val n = 1024
+      val bytes = Bytes.create n
+      val n' = Unix.recv sock bytes 0 n nil
+      val bytes' = ((Bytes.sub bytes) 0) n'
+      val s = Bytes.to_string bytes'
+  in
+      Time.print s;
+      s
+  end
+
+fun inploop addr sock =
+    let val req = recv sock
+	val _ = Printf.printf "received\n%!"
+    in
+        if String.length req = 0 then
+            (close sock; Atomic.decr conns;
+	     cmd { ret () }
+	    )
+        else
+            let val (response, m) =
+                    case parse_request req of
+			SOME filename =>
+                        (case readfile ("www/" ^ filename) of
+                             SOME s => build_success s
+                           | NONE => build_404 (),
+			 cmd
+			     {
+			      withmutex[request_mut]
+				       { ret (reqs := {page = filename,
+						       host = addr,
+						       ts = Unix.time ()}::(!reqs)) };
+			      ret (Printf.printf "Added\n%!")
+			     }
+			)
+                      | NONE => (build_inv_req (), cmd { ret () })
+            in
+                List.iter (sendLine sock) response;
+		Printf.printf "sent\n%!";
+		cmd
+		    {
+		   m;
+                   (* close sock *)
+		   inploop addr sock
+		}
+            end
+    end
+
+
+fun acceptloop sock =
+    (let val _ = Printf.printf "acceptloop\n%!"
+	 val (s, a) = Unix.accept sock
+	 val h = Lib.host_of_sockaddr a
+     in
+         cmd
+             {
+	       bad <- withmutex[bad_mut] { ret (Lib.UHashtbl.mem bad_hashtbl h)};
+	       if bad then
+		   cmd {
+		       ret (Printf.printf "rejected\n%!");
+		       acceptloop sock
+		   }
+	       else
+		   cmd {
+		       ret (Atomic.incr conns;
+			    Printf.printf "accepted: ";
+			    Time.print (string_of_int (Atomic.get conns));
+			    Printf.printf " connections\n%!";
+			    addtosocks s);
+		       spawn[serve_p] { inploop h s };
+		       acceptloop sock
+		   }
+             }
+     end)
+
+fun take n l =
+    let fun take_rec a n l =
+	    (if n <= 0 then (List.rev a, l)
+	    else
+		(case l of
+		    nil => (List.rev a, nil)
+		  | h::t => take_rec (h::a) (n - 1) t
+		)
+	    )
+    in
+	take_rec nil n l
+    end
+
+fun process_one_host host =
+    let val _ = Printf.printf "processing "
+	val _ = Time.print (Lib.string_of_host host)
+	val _ = Printf.printf "\n%!"
+	val reqs = Lib.TSHashtbl.find_all conns_hashtbl host
+	val now = Unix.time ()
+	val recent = List.filter
+			 (fn ts' => Time.tsless
+					(Time.tsminus now ts')
+					time_window)
+			 reqs
+	val _ = Time.print (string_of_int (List.length recent))
+	val _ = Printf.printf "\n%!"
+    in
+	if List.length recent > req_threshold then
+	    host::nil
+	else
+	    nil
+    end
+
+
+fun process_hosts parg hosts =
+    let fun touch_all l futs =
+	    case futs of
+		nil => cmd { ret l }
+	      |  f::t => cmd { v <- sync f;
+			      touch_all (List.append v l) t}
+	fun spawn_futs futs hosts =
+	    case take hosts_par_threshold hosts of
+		(nil, _) => touch_all nil futs
+	      | (l, rest) =>
+		cmd { t <- spawn[parg]
+			{ ret (List.flatten (List.map process_one_host l)) };
+		      spawn_futs (t::futs) rest
+		    }
+    in
+	cmd {
+	  change[parg];
+	  spawn_futs nil hosts
+	}
+    end
+
+fun trackloop _ =
+    let val p = if Atomic.get conns > conns_cutoff
+		then high_class_p else low_class_p
+    in
+    cmd {
+    (* p <- ret (); *)
+    change[p];
+    (* ret (Printf.printf "checking\n%!"); *)
+    new_reqs <- withmutex[request_mut]
+	     {
+	      new_reqs <- ret (!reqs);
+	      ret (reqs := nil);
+	      (* ret (Printf.printf "checked1\n%!"); *)
+	      (* ret (Time.sleep 10); *)
+	      ret new_reqs
+	     };
+
+      (* Add new requests to hash table *)
+      ret (List.iter (fn {page, host, ts} => Lib.TSHashtbl.add conns_hashtbl host ts)
+		     new_reqs);
+
+      hosts <- cmd { ret (List.sort_uniq
+			  Lib.host_compare
+			  (List.map (fn {page, host, ts} => host) new_reqs)) };
+      (* Process new hosts in parallel.
+       * NOTE: This results in concurrent hash table *reads*, which is
+       * safe as of the current code. *)
+
+    bad_hosts <- process_hosts p hosts;
+
+    withmutex[bad_mut]
+	     {
+	      ret (List.iter (fn h => Lib.UHashtbl.add bad_hashtbl h ()) bad_hosts)
+	     };
+
+      trackloop ()
+    }
+    end
+
+main
+{
+ ret (Printf.printf "main\n%!");
+ sock <- ret (open_conn ());
+ ret (Printf.printf "listening...\n%!");
+ t <- spawn[low_class_p] { trackloop () };
+ l <- spawn[accept_p] { acceptloop sock };
+ sync l
+}

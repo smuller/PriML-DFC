@@ -1,0 +1,17 @@
+priority high
+priority med
+priority low
+
+order low < med
+order med < high
+
+(* Let example *)
+main {
+    let val p = if true then low else high
+    in
+        cmd {
+            td <- spawn[p] { ret 1 };
+            spawn[p] { sync td }
+        }
+    end
+}

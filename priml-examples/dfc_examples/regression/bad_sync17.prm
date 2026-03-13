@@ -1,0 +1,20 @@
+priority high
+priority med
+priority low
+
+order low < med
+order med < high
+
+(* constraint violation {med} <= {high, low, med} *)
+main {
+
+    t <- spawn[if true then high else med] {
+        change[low];
+        ret 1
+    };
+
+    spawn[med] {
+        x <- sync t;
+        ret x
+    }
+}

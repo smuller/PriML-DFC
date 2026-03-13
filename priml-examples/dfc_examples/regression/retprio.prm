@@ -1,0 +1,10 @@
+priority p1
+
+fun notbot () =
+  p1
+
+main {
+  t1 <- spawn[notbot ()] { ret 1 };
+  sync(t1)
+  (* t2 <- spawn[bot] { sync t1 }; *)
+}
