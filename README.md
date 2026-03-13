@@ -12,14 +12,14 @@ It is possible to evaluate the artifact outside of the Docker container on Unix 
 
 ## Quick Start: Push-button Evaluation
 
-This evaluation builds the Docker image and performs the experiments to reproduce Table 2 of the paper, which summarizes the results of Section 4.3: Quantitative Evaluation.
+This evaluation loads the pre-built Docker image and performs the experiments to reproduce Table 2 of the paper, which summarizes the results of Section 4.3: Quantitative Evaluation.
 
-Navigate to the top level of the artifact (the folder containing `Dockerfile`) and run the below:
+Navigate to the top level of the artifact (the folder containing `Dockerfile`) and run the below (possibly using `sudo` if necessary):
 
-    sudo ./build.sh
-    sudo ./run_paper.sh
+    docker load -i priml-dfc-artifact.tar
+    ./run_paper.sh
 
-The first command, to build the Docker container, may take several minutes. The second command should take seconds and will output, in CSV format, the raw data for Table 2, giving the number of priority constraints generated, and time for Hindley-Milner type inference, constraint generation, constraint solving, and overall compilation.
+The first command loads the Docker container and may take a minute. The second command should take seconds and will output, in CSV format, the raw data for Table 2, giving the number of priority constraints generated, and time for Hindley-Milner type inference, constraint generation, constraint solving, and overall compilation.
 
 An example output on our test system is:
 
@@ -66,9 +66,9 @@ Here, we summarize the artifact-related claims made in the paper with pointers t
 ## Detailed Evaluation
 ### Building and Navigating the Docker Image
 
-In the top level of the artifact (the folder containing `Dockerfile`), run
+If desired, you can rebuild the Docker container. In the top level of the artifact (the folder containing `Dockerfile`), run
 
-    sudo ./build.sh
+    ./build.sh
     
 to build the Docker image containing artifact. This extends an Ubuntu 24.04 image with the following dependencies necessary for building and running the artifact:
 
@@ -78,13 +78,15 @@ to build the Docker image containing artifact. This extends an Ubuntu 24.04 imag
 * The OPAM package manager for OCaml, with OCaml 5.2.0 and `ocamlfind` (for compiling PriML programs using the OCaml backend)
 * [MLton](http://mlton.org/)
 
-It also builds the PriML compiler. Instructions for rebuilding it manually are below.
+It also builds the PriML compiler. Instructions for rebuilding it manually are below. The entire build process will likely take several minutes.
 
-The entire build process will likely take several minutes.
+You could instead load the pre-built container using
+
+    docker load -i priml-dfc-artifact.tar
 
 You can then start the container interactively using
 
-    sudo ./start.sh
+    ./start.sh
 
 This will open a shell in the top level directory of the artifact, which mirrors the directory structure of the artifact described above in "Components and Directory Structure" except that the scripts in `scripts/` are moved to the top level inside the Docker container.
 
@@ -179,7 +181,7 @@ Note that the artifact is not designed for testing the case study, but running i
 The artifact contains a suite of small tests in `priml-examples/dfc_examples/regression`. You can run this suite in two ways:
 
 * In the Docker container, in `/home/ubuntu/Priml-DFC`: `./regression.sh`
-* Outside the container but after having built it, in the top level folder of the artifact: `sudo ./run_regression.sh`
+* Outside the container but after having built it, in the top level folder of the artifact: `./run_regression.sh`
 
 In either case, the output should be a series of rows of the following form:
 
