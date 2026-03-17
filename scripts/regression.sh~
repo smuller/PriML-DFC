@@ -1,4 +1,0 @@
-#!/bin/bash
-
-cd priml-examples/dfc_examples/regression; ./runall.sh
-cd ../../../

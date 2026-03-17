@@ -88,7 +88,7 @@ You can then start the container interactively using
 
     ./start.sh
 
-This will open a shell in the top level directory of the artifact, which mirrors the directory structure of the artifact described above in "Components and Directory Structure" except that the scripts in `scripts/` are moved to the top level inside the Docker container.
+This will open a shell in the top level directory of the artifact, which mirrors the directory structure of the artifact described above in "Components and Directory Structure" except that the scripts in `scripts/` are moved to the top level inside the Docker container, and `domainslib/` is moved one level up, to the `ubuntu` home directory on the container.
 
 ### Navigating the Source Code (Optional; Supports Claims in Sections 4.1 and 4.2)
 
