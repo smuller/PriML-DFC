@@ -4,7 +4,14 @@ This artifact consists of the source code for the PriML compiler, extended with 
 
 **Note:** The claims made in the paper about the benchmarks cover only their compilation, and not properties about their execution. Therefore, the push-button evaluation for this artifact will only compile the benchmarks and not run them. We provide instructions for separately compiling and running (some of) the benchmarks, but note that the Docker container is not set up out of the box for, e.g., testing parallel scaling of the benchmarks, or running the web server benchmark.
 
-## Hardware and Software requirements
+## What to Download
+
+If you're looking at this README file on, e.g., Zenodo, and trying to figure out what you need to download to run the artifact, there are two options:
+
+1. Download everything. This is the preferred, maximally compatible, option for evaluating the artifact. You can optionally rebuild the artifact following the instructions under "Building and Navigating the Artifact" below.
+2. Download everything *except* the pre-built Docker image, `priml-dfc-artifact.tar`. Skip any `docker load` commands. This requires downloading less up-front, but will require an internet connection to download additional material while building the artifact, and is therefore discouraged for the PLDI artifact evaluation process but may be preferable to anyone reusing this artifact later.
+
+## Hardware and Software Requirements
 
 The only requirement for successful evaluation of this artifact is the ability to build and run Docker containers. We developed and tested the artifact on Ubuntu 24.04 with 32 GB of memory and 512 GB of disk.
 
@@ -46,7 +53,6 @@ The artifact includes the following files subfolders:
     build.sh - script to build the Docker container
     Dockerfile - used for building the Docker image to evaluate the artifact
     Makefile - for building the PriML compiler
-    README-priml.md - PriML's original README file
     README.md - this file
     run_paper.sh - script to run the paper evaluation in the Docker container
     run_regression.sh - script to run the regression suite in the Docker container
@@ -66,7 +72,9 @@ Here, we summarize the artifact-related claims made in the paper with pointers t
 ## Detailed Evaluation
 ### Building and Navigating the Docker Image
 
-If desired, you can rebuild the Docker container. In the top level of the artifact (the folder containing `Dockerfile`), run
+If desired, you can rebuild the Docker container.
+**Note:** Building the artifact requires an internet connection and will download existing images. If you don't have an internet connection in your setup or don't want to download new items during the test, skip to "You could instead load..."
+In the top level of the artifact (the folder containing `Dockerfile`), run
 
     ./build.sh
     
@@ -79,6 +87,7 @@ to build the Docker image containing artifact. This extends an Ubuntu 24.04 imag
 * [MLton](http://mlton.org/)
 
 It also builds the PriML compiler. Instructions for rebuilding it manually are below. The entire build process will likely take several minutes.
+
 
 You could instead load the pre-built container using
 
